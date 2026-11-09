@@ -14,6 +14,7 @@ DB = Path.home() / "Library/Application Support/Cursor/User/globalStorage/state.
 CURSOR_SETTINGS = Path.home() / "Library/Application Support/Cursor/User/settings.json"
 APP_SETTINGS = Path.home() / "Library/Application Support/cursor-usage-menubar/settings.json"
 URL = "https://cursor.com/api/usage-summary"
+PERIOD_URL = "https://cursor.com/api/dashboard/get-current-period-usage"
 
 
 def jwt_sub(token: str) -> str:
@@ -100,11 +101,14 @@ def proxy_candidates():
     return auto_candidates()
 
 
-def fetch(cookie: str, proxy):
-    req = urllib.request.Request(
-        URL,
-        headers={"Cookie": cookie, "User-Agent": "CursorUsageMenubar-status/1.0"},
-    )
+def fetch(cookie: str, proxy, url=URL, method="GET", body=None):
+    headers = {"Cookie": cookie, "User-Agent": "CursorUsageMenubar-status/1.0"}
+    data = None
+    if body is not None:
+        data = body if isinstance(body, bytes) else body.encode()
+        headers["Content-Type"] = "application/json"
+        headers["Origin"] = "https://cursor.com"
+    req = urllib.request.Request(url, data=data, method=method, headers=headers)
     if proxy:
         host, port = proxy
         handler = urllib.request.ProxyHandler(
@@ -146,19 +150,43 @@ def main() -> None:
     if data is None:
         raise SystemExit(f"не достучаться до cursor.com: {last_err}")
 
+    period = None
+    for proxy in proxy_candidates():
+        try:
+            period, via = fetch(cookie, proxy, url=PERIOD_URL, method="POST", body="{}")
+            break
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+            continue
+
     plan = (data.get("individualUsage") or {}).get("plan") or {}
-    start = datetime.fromisoformat(data["billingCycleStart"].replace("Z", "+00:00"))
-    end = datetime.fromisoformat(data["billingCycleEnd"].replace("Z", "+00:00"))
+    summary_total = float(plan.get("totalPercentUsed") or 0)
+    pu = (period or {}).get("planUsage") or {}
+    if pu.get("totalPercentUsed") is not None:
+        total = float(pu["totalPercentUsed"])
+        auto = float(pu.get("autoPercentUsed") if pu.get("autoPercentUsed") is not None else total)
+        api = pu.get("apiPercentUsed")
+        start = datetime.fromtimestamp(int(period["billingCycleStart"]) / 1000, tz=timezone.utc)
+        end = datetime.fromtimestamp(int(period["billingCycleEnd"]) / 1000, tz=timezone.utc)
+        source = "current-period"
+    else:
+        total = summary_total
+        auto = float(plan.get("autoPercentUsed") or 0)
+        api = plan.get("apiPercentUsed")
+        start = datetime.fromisoformat(data["billingCycleStart"].replace("Z", "+00:00"))
+        end = datetime.fromisoformat(data["billingCycleEnd"].replace("Z", "+00:00"))
+        source = "usage-summary"
     now = datetime.now(timezone.utc)
     frac = min(1.0, max(0.0, (now - start).total_seconds() / (end - start).total_seconds()))
-    total = float(plan.get("totalPercentUsed") or 0)
-    api = float(plan.get("apiPercentUsed") or 0)
-    auto = float(plan.get("autoPercentUsed") or 0)
+    api_txt = "нет отдельной квоты" if api is None else f"{float(api):.1f}%"
     print(
         f"OK  mode={cfg.get('proxyMode')} via={via}  plan={data.get('membershipType')}  "
-        f"total={total:.1f}%  auto={auto:.1f}%  api/other={api:.1f}%"
+        f"source={source}  total={total:.1f}%  auto={auto:.1f}%  api/other={api_txt}"
     )
-    print(f"    expected≈{frac*100:.1f}%  cycle {start.date()} → {end.date()}")
+    print(
+        f"    summary-raw={summary_total:.1f}%  expected≈{frac*100:.1f}%  "
+        f"cycle {start.date()} → {end.date()}"
+    )
     if total > frac * 100 + 5:
         print("    pace: выше графика")
     elif total < frac * 100 - 5:

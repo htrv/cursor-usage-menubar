@@ -46,9 +46,15 @@ struct MenuPanel: View {
 
                 Text(String(format: "Total: %.1f%%  (ожид. %.1f%%)", p.totalPercent, p.expectedPercent))
                     .font(.system(.body, design: .monospaced))
-                Text(String(format: "Auto: %.1f%%   Other: %.1f%%", p.autoPercent, p.apiPercent))
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                if let api = p.apiPercent {
+                    Text(String(format: "Auto: %.1f%%   Other: %.1f%%", p.autoPercent, api))
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                } else if abs(p.autoPercent - p.totalPercent) > 0.05 {
+                    Text(String(format: "Auto: %.1f%%", p.autoPercent))
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
                 if let used = p.used, let limit = p.limit {
                     Text(String(format: "Used: %.0f / %.0f", used, limit))
                         .font(.system(.caption, design: .monospaced))
@@ -72,7 +78,7 @@ struct MenuPanel: View {
                     .font(.caption)
                     .foregroundStyle(paceColor(p.status))
 
-                Text("Круг = день · точка = other models")
+                Text(p.apiPercent == nil ? "Круг = день" : "Круг = день · точка = other models")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             } else if store.errorText == nil {

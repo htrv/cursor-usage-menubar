@@ -14,7 +14,7 @@ final class UsageStore: ObservableObject {
     private var didStart = false
 
     init() {
-        icon = IconRenderer.image(dayFill: 0, apiPercent: 0, overPace: false)
+        icon = IconRenderer.image(dayFill: 0, apiPercent: nil, overPace: false)
         // Не ждать открытия меню — иначе history/иконка пустые.
         Task { @MainActor in
             self.start()
@@ -69,9 +69,11 @@ final class UsageStore: ObservableObject {
                 apiPercent: snap.apiPercent,
                 overPace: snap.status == .over
             )
+            PromExport.write(snapshot: snap, models: result.models)
         } catch {
             errorText = error.localizedDescription
-            icon = IconRenderer.image(dayFill: 0, apiPercent: 0, overPace: true)
+            icon = IconRenderer.image(dayFill: 0, apiPercent: nil, overPace: true)
+            PromExport.writeFailure(error.localizedDescription)
         }
     }
 }

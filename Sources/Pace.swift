@@ -19,7 +19,8 @@ struct PaceSnapshot {
     let elapsedFraction: Double
     let totalPercent: Double
     let autoPercent: Double
-    let apiPercent: Double
+    /// nil — отдельной квоты other models в ответе нет (общий пул).
+    let apiPercent: Double?
     let used: Double?
     let limit: Double?
     let remaining: Double?
@@ -73,7 +74,7 @@ enum Pace {
         let plan = summary.individualUsage?.plan
         let total = plan?.totalPercentUsed ?? 0
         let auto = plan?.autoPercentUsed ?? total
-        let api = plan?.apiPercentUsed ?? 0
+        let api = plan?.apiPercentUsed
 
         let now = Date()
         let span = max(end.timeIntervalSince(start), 1)
@@ -140,7 +141,7 @@ enum Pace {
             autoPercent: auto,
             apiPercent: api,
             used: plan?.used,
-            limit: plan?.breakdown?.total ?? plan?.limit,
+            limit: plan?.limit,
             remaining: plan?.remaining,
             bonusTotal: plan?.breakdown?.total,
             todayTotalPct: todayTotalPct,

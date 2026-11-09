@@ -1,6 +1,6 @@
 # Cursor Usage Menubar
 
-Иконка в строке меню macOS, которая показывает, как быстро вы расходуете лимит подписки Cursor: кольцо — расход за **сегодня** относительно дневного бюджета, точка внутри — лимит **other models / API**, тонкий красный ободок — темп выше графика по биллинг‑циклу.
+Иконка в строке меню macOS, которая показывает, как быстро вы расходуете лимит подписки Cursor: кольцо — расход за **сегодня** относительно дневного бюджета, точка внутри — отдельный лимит named/API, если план его отдаёт, тонкий красный ободок — темп выше графика по окну included.
 
 Никакой регистрации и ключей: приложение использует сессию уже залогиненного Cursor IDE на этом же Mac.
 
@@ -48,7 +48,10 @@ open ~/Applications/"Cursor Usage.app"
    `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`, таблица `ItemTable`, ключ `cursorAuth/accessToken` (JWT).
 2. Приложение открывает базу **только на чтение**, достаёт токен и `sub` из его payload.
 3. Из них собирается cookie `WorkosCursorSessionToken=<sub>::<jwt>` — та же, что ставит браузер на cursor.com.
-4. С этой cookie делается `GET https://cursor.com/api/usage-summary` (тот же endpoint, которым пользуется страница Dashboard → Usage).
+4. С этой cookie приложение читает два ответа:
+   - `POST https://cursor.com/api/dashboard/get-current-period-usage` — живой процент included и границы окна. На объединённом плане окно короткое (неделя), Auto и именные модели сидят в одном проценте.
+   - `GET https://cursor.com/api/usage-summary` — запасной источник. На таком плане он может отдавать нули и чужие даты; если недельный ответ есть, меню берёт процент и даты из него.
+   - `POST https://cursor.com/api/dashboard/get-aggregated-usage-events` — накопительные токены и оценка по моделям. В меню не показывается, уходит только в метрики ниже.
 
 Токен нигде не сохраняется и никуда, кроме `cursor.com`, не отправляется; на каждое обновление (старт + каждые 5 минут + кнопка «Обновить») он перечитывается из базы. Если вы перелогинитесь в Cursor — приложение подхватит новый токен само.
 
@@ -62,13 +65,19 @@ Endpoint неофициальный: Cursor может его поменять, 
 |--------|--------|
 | Внешнее кольцо (заполнение) | расход **сегодня** / дневной бюджет; сброс в локальную полночь |
 | Цвет кольца | зелёный → жёлтый → красный по заполнению дня |
-| Точка внутри | `apiPercentUsed` (other models): чем ближе к 100%, тем краснее |
-| Тонкий красный ободок | темп **выше графика** по биллинг‑циклу |
+| Точка внутри | `apiPercentUsed`, только когда у плана отдельный пул named/API. На общем пуле точки нет |
+| Тонкий красный ободок | темп **выше графика** по окну included |
 
 Дневной бюджет: `(100 − total%) / дней_осталось_включая_сегодня`.
 Темп: сравниваем `totalPercentUsed` с долей прошедшего биллинг‑цикла (±5 п.п.).
 
-История дня: `~/Library/Application Support/cursor-usage-menubar/history.json`.
+История дня: `~/Library/Application Support/cursor-usage-menubar/history.json`. База «сегодня» помнит начало окна: при смене окна вчерашний снимок не считается сегодняшним расходом.
+
+## Метрики Prometheus
+
+Каждый удачный опрос атомарно переписывает `~/Library/Application Support/node_exporter/textfile/cursor_usage.prom`. Каталог должен быть передан node_exporter как `--collector.textfile.directory`.
+
+У процента included метка только `membership`. Темп (`cursor_usage_pace`) и способ отсчёта суток (`cursor_usage_day_seed`) — отдельные числа, чтобы смена темпа не разрывала историю. Расход моделей (`cursor_usage_model_*`) накопительный, тарифы одного имени сложены в одну линию. Если запрос моделей не удался, в файле остаётся прошлый удачный снимок.
 
 ## Прокси
 
@@ -107,7 +116,8 @@ Sources/
   App.swift            # MenuBarExtra, панель меню, настройки прокси
   UsageStore.swift     # таймер обновления, состояние, иконка
   TokenProvider.swift  # чтение токена Cursor из state.vscdb
-  CursorAPI.swift      # usage-summary + перебор прокси
+  CursorAPI.swift      # current-period, usage-summary, модели
+  PromExport.swift     # textfile для node_exporter
   Pace.swift           # дневной бюджет и темп по циклу
   HistoryStore.swift   # снимки по дням (history.json)
   IconRenderer.swift   # отрисовка кольца/точки

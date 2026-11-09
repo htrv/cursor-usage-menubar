@@ -23,6 +23,8 @@ struct HistoryStore {
         let used: Double?
         let seededFrom: DaySeed
         let createdAt: Date
+        /// Секунды unix начала цикла. Другое окно — другой смысл процента, вчерашний снимок не база.
+        let cycleStart: String?
     }
 
     struct RecordResult {
@@ -70,17 +72,20 @@ struct HistoryStore {
         cycleEnd: Date
     ) -> RecordResult {
         let key = dayKey()
+        let cycleKey = String(Int(cycleStart.timeIntervalSince1970.rounded()))
         var file = load()
 
-        if file.baseline?.dayKey != key {
+        let cycleChanged = file.baseline?.cycleStart != cycleKey
+        if file.baseline?.dayKey != key || cycleChanged {
             file.baseline = makeBaseline(
                 key: key,
                 totalPercent: totalPercent,
                 apiPercent: apiPercent,
                 used: used,
-                previous: file.last,
+                previous: cycleChanged ? nil : file.last,
                 cycleStart: cycleStart,
-                cycleEnd: cycleEnd
+                cycleEnd: cycleEnd,
+                cycleKey: cycleKey
             )
         } else if file.baseline?.seededFrom == .firstSample,
                   let last = file.last,
@@ -97,6 +102,7 @@ struct HistoryStore {
                     previous: nil, // force midnight estimate path when no other-day last
                     cycleStart: cycleStart,
                     cycleEnd: cycleEnd,
+                    cycleKey: cycleKey,
                     forceMidnight: true
                 )
             }
@@ -129,6 +135,7 @@ struct HistoryStore {
         previous: Snapshot?,
         cycleStart: Date,
         cycleEnd: Date,
+        cycleKey: String,
         forceMidnight: Bool = false
     ) -> DayBaseline {
         if !forceMidnight, let prev = previous, prev.dayKey != key {
@@ -138,7 +145,8 @@ struct HistoryStore {
                 apiPercentUsed: prev.apiPercentUsed,
                 used: prev.used,
                 seededFrom: .yesterdayLast,
-                createdAt: Date()
+                createdAt: Date(),
+                cycleStart: cycleKey
             )
         }
 
@@ -156,7 +164,8 @@ struct HistoryStore {
                 apiPercentUsed: est.api,
                 used: used,
                 seededFrom: .midnightEstimate,
-                createdAt: Date()
+                createdAt: Date(),
+                cycleStart: cycleKey
             )
         }
 
@@ -166,7 +175,8 @@ struct HistoryStore {
             apiPercentUsed: apiPercent,
             used: used,
             seededFrom: .firstSample,
-            createdAt: Date()
+            createdAt: Date(),
+            cycleStart: cycleKey
         )
     }
 

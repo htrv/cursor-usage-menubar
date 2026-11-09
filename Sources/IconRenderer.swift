@@ -2,7 +2,7 @@ import AppKit
 
 enum IconRenderer {
     /// 18pt logical → draw at 2x for retina.
-    static func image(dayFill: Double, apiPercent: Double, overPace: Bool) -> NSImage {
+    static func image(dayFill: Double, apiPercent: Double?, overPace: Bool) -> NSImage {
         let size = NSSize(width: 18, height: 18)
         let img = NSImage(size: size, flipped: false) { rect in
             draw(in: rect, dayFill: dayFill, apiPercent: apiPercent, overPace: overPace)
@@ -12,9 +12,9 @@ enum IconRenderer {
         return img
     }
 
-    private static func draw(in rect: NSRect, dayFill: Double, apiPercent: Double, overPace: Bool) {
+    private static func draw(in rect: NSRect, dayFill: Double, apiPercent: Double?, overPace: Bool) {
         let fill = min(1, max(0, dayFill))
-        let api = min(1, max(0, apiPercent / 100))
+        let api = apiPercent.map { min(1, max(0, $0 / 100)) }
 
         let inset: CGFloat = overPace ? 1.5 : 1.0
         let ringRect = rect.insetBy(dx: inset, dy: inset)
@@ -63,7 +63,11 @@ enum IconRenderer {
             height: dotR * 2
         )
         let dot = NSBezierPath(ovalIn: dotRect)
-        apiColor(api).setFill()
+        if let api {
+            apiColor(api).setFill()
+        } else {
+            NSColor.secondaryLabelColor.withAlphaComponent(0.45).setFill()
+        }
         dot.fill()
 
         // Tiny highlight for readability on dark menu bar
